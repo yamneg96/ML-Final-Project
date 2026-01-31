@@ -232,3 +232,7 @@ def main() -> None:
     out_df["Churn_Probability"] = churn_prob
     out_df.to_csv(out_path, index=False)
     print(f"Predictions saved to {out_path} (model: {model_path.name})")
+
+
+if __name__ == "__main__":
+    main()
