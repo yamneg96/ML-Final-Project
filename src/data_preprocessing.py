@@ -41,3 +41,13 @@ def preprocess_data(df):
     ]
     existing_cats = [col for col in categorical_cols if col in df.columns]
     df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
+
+        # Target variable
+    if 'Churn Value' in df.columns:
+        y = df['Churn Value'].map({True: 1, False: 0})
+    elif 'Churn Label' in df.columns:
+        y = df['Churn Label'].map({'Yes': 1, 'No': 0})
+    else:
+        raise ValueError("No valid target column found. Use 'Churn Value' or 'Churn Label'.")
+    
+    X = df.drop(['Churn Value', 'Churn Label'], axis=1, errors='ignore')
