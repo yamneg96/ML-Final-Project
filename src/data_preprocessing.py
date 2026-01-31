@@ -55,3 +55,6 @@ def preprocess_data(df):
         # Scale features
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
+
+        # Save scaler
+    joblib.dump(scaler, SCALER_PATH)
