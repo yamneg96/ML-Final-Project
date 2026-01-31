@@ -32,3 +32,12 @@ def preprocess_data(df):
     for col in binary_cols:
         if col in df.columns:
             df[col] = df[col].map({'Yes': 1, 'No': 0, 'Male': 1, 'Female': 0, 1: 1, 0: 0})
+
+        # Encode other categorical columns using one-hot encoding
+    categorical_cols = [
+        'Gender', 'Internet Service', 'Online Security', 'Online Backup',
+        'Device Protection', 'Tech Support', 'Streaming TV', 'Streaming Movies',
+        'Contract', 'Payment Method'
+    ]
+    existing_cats = [col for col in categorical_cols if col in df.columns]
+    df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
