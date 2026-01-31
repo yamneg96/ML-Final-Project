@@ -97,3 +97,10 @@ def _load_feature_columns() -> list[str]:
         f"Expected {FEATURE_COLUMNS_PATH} (preferred) or {processed_path} (fallback). "
         "Run `python3 src/data_preprocessing.py` first."
     )
+
+
+def _load_numeric_medians() -> dict[str, float]:
+    if NUMERIC_MEDIANS_PATH.exists():
+        d = joblib.load(str(NUMERIC_MEDIANS_PATH))
+        return {str(k): float(v) for k, v in dict(d).items()}
+    return {}
