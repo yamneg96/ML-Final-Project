@@ -9,3 +9,5 @@ seaborn
 joblib
 # Excel file handling
 openpyxl
+# for app model deployment
+streamlit
