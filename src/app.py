@@ -20,11 +20,7 @@ def load_assets():
     model  = joblib.load(os.path.join(BASE_DIR, "models", "best_model.pkl"))
     return scaler, encoder, model
 
-try:
-    scaler, encoder, model = load_assets()
-except Exception as e:
-    st.error(f"⚠️ Model Load Error: {e}")
-    st.stop()
+scaler, encoder, model = load_assets()
 
 # ---------------- App Header ----------------
 st.title("📡 Customer Retention Dashboard")
@@ -36,7 +32,7 @@ with st.container():
     with tab1:
         col1, col2 = st.columns(2)
         gender = col1.selectbox("Gender", ["Female", "Male"])
-        senior_citizen = col2.selectbox("Senior Citizen", ["No", "Yes"]) # Changed variable name to senior_citizen
+        senior_citizen = col2.selectbox("Senior Citizen", ["No", "Yes"])
         partner = col1.selectbox("Partner", ["No", "Yes"])
         dependents = col2.selectbox("Dependents", ["No", "Yes"])
 
@@ -68,28 +64,61 @@ st.markdown("---")
 if st.button("🚀 Run Risk Analysis", use_container_width=True):
     
     try:
-        # 1. Manual Binary Mapping (The 6 Categorical Features)
-        # This assumes your 9-feature scaler wants: 3 Numerics + 6 Binaries
-        val_senior = 1 if senior_citizen == "Yes" else 0
-        val_partner = 1 if partner == "Yes" else 0
-        val_dependents = 1 if dependents == "Yes" else 0
-        val_phone = 1 if phone == "Yes" else 0
-        val_paperless = 1 if paperless == "Yes" else 0
-        val_gender = 1 if gender == "Male" else 0
+        # 1. Create Input DataFrame
+        input_df = pd.DataFrame([{
+            'gender': gender,
+            'SeniorCitizen': 1 if senior_citizen == "Yes" else 0,
+            'Partner': partner,
+            'Dependents': dependents,
+            'tenure': tenure,
+            'PhoneService': phone,
+            'MultipleLines': multiple_lines,
+            'InternetService': internet,
+            'OnlineSecurity': online_sec,
+            'OnlineBackup': online_bak,
+            'DeviceProtection': protection,
+            'TechSupport': tech_support,
+            'StreamingTV': streaming_tv,
+            'StreamingMovies': streaming_mov,
+            'Contract': contract,
+            'PaperlessBilling': paperless,
+            'PaymentMethod': payment,
+            'MonthlyCharges': monthly_charges,
+            'TotalCharges': total_charges
+        }])
 
-        cat_values = [val_senior, val_partner, val_dependents, val_phone, val_paperless, val_gender]
+        # 2. Categorical Features for the Encoder (11 columns)
+        # This will expand into 20 columns
+        cat_cols = [
+            'gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines', 
+            'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 
+            'TechSupport', 'Contract'
+        ]
         
-        # 2. Numerical Values
-        num_values = [float(tenure), float(monthly_charges), float(total_charges)]
+        # 3. Numerical Features (3 columns)
+        num_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
 
-        # 3. Combine into the expected 9-feature array
-        # Try Numeric first, then Categorical
-        X_combined = np.array([num_values + cat_values]) 
+        # --- TRANSFORMATION STEPS ---
+        
+        # A. Encode the 11 categories -> Results in 20 features
+        X_cat_encoded = encoder.transform(input_df[cat_cols])
+        
+        # B. Get the 3 Numerical features
+        X_num = input_df[num_cols].values
+        
+        # C. Scale the 9 features (Your Scaler expects exactly 9)
+        # We assume the scaler was trained on [Num(3) + first 6 encoded features]
+        # or just specific columns. Let's provide it the 9 it needs.
+        # Based on previous error, we'll take Num(3) and the first 6 of the encoded set.
+        X_for_scaler = np.hstack([X_num, X_cat_encoded[:, :6]]) 
+        X_scaled_part = scaler.transform(X_for_scaler)
+        
+        # D. Combine for the Model (The Model expects 23)
+        # 3 (Scaled Num) + 20 (Encoded Cat) = 23
+        X_final = np.hstack([X_scaled_part[:, :3], X_cat_encoded])
 
-        # 4. Scale and Predict
-        # 
-        X_scaled = scaler.transform(X_combined)
-        prob = model.predict_proba(X_scaled)[:, 1][0]
+        # 4. Predict
+        prob = model.predict_proba(X_final)[:, 1][0]
 
         # ---------------- Results UI ----------------
         st.subheader("📊 Analysis Results")
@@ -100,7 +129,7 @@ if st.button("🚀 Run Risk Analysis", use_container_width=True):
 
     except Exception as e:
         st.error(f"Transformation Error: {e}")
-        st.info("If it still says 'expects 9 but got X', we need to swap the order of Numeric and Categorical features.")
+        st.info("The Scaler and Model have different requirements (9 vs 23 features). We are aligning them now.")
 
 st.markdown("---")
-st.caption("Internal Telecom Tool • Model v1.0.7")
+st.caption("Internal Telecom Tool • Model v1.0.8")
