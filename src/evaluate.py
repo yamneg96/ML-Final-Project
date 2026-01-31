@@ -9,5 +9,11 @@ def evaluate_model(model, X_test, y_test):
         # fallback for models without predict_proba
         y_prob = y_pred
 
-    
+    metrics = {
+        "accuracy": accuracy_score(y_test, y_pred),
+        "precision": precision_score(y_test, y_pred),
+        "recall": recall_score(y_test, y_pred),
+        "f1": f1_score(y_test, y_pred),
+        "roc_auc": roc_auc_score(y_test, y_prob)
+    }
     return metrics
