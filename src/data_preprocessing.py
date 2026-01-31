@@ -1,97 +1,148 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.preprocessing import StandardScaler
 import joblib
 import os
+from pathlib import Path
 
 # Paths
-RAW_DATA_PATH = "data/raw/Telecom_churn.xlsx"
-PROCESSED_DATA_PATH = "data/processed/churn_processed.csv"
-SCALER_PATH = "models/scaler.pkl"
-ENCODER_PATH = "models/encoder.pkl"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+RAW_DATA_PATH = REPO_ROOT / "data/raw/Telecom_churn.xlsx"
+RAW_DATA_FALLBACK_PATH = REPO_ROOT / "data/raw/telecom_churn.xlsx"
+PROCESSED_DATA_PATH = REPO_ROOT / "data/processed/churn_processed.csv"
+SCALER_PATH = REPO_ROOT / "models/scaler.pkl"
+FEATURE_COLUMNS_PATH = REPO_ROOT / "models/feature_columns.pkl"
+NUMERIC_MEDIANS_PATH = REPO_ROOT / "models/numeric_medians.pkl"
 
 # Ensure directories exist
-os.makedirs(os.path.dirname(PROCESSED_DATA_PATH), exist_ok=True)
-os.makedirs(os.path.dirname(SCALER_PATH), exist_ok=True)
+PROCESSED_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+SCALER_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def load_data():
-    """Load dataset from Excel"""
-    return pd.read_excel(RAW_DATA_PATH)
+    """Load data from Excel file."""
+    if RAW_DATA_PATH.exists():
+        return pd.read_excel(RAW_DATA_PATH)
+    if RAW_DATA_FALLBACK_PATH.exists():
+        return pd.read_excel(RAW_DATA_FALLBACK_PATH)
+    raise FileNotFoundError(
+        f"Raw data file not found. Expected one of: {RAW_DATA_PATH} or {RAW_DATA_FALLBACK_PATH}"
+    )
 
 def preprocess_data(df):
-    """Preprocess the telecom churn dataset"""
+    """Preprocess the telecom churn dataset based on column names."""
 
     # Drop irrelevant columns
-    drop_cols = ["CustomerID", "Count", "Country", "City", "Zip Code",
-                 "Lat Long", "Latitude", "Longitude", "Churn Score", "CLTV", "Churn Reason"]
-    df = df.drop(columns=drop_cols, errors='ignore')
+    df = df.drop([
+        "CustomerID", "Count", "Country", "City", "Zip Code",
+        "Lat Long", "Latitude", "Longitude", "Churn Score", "CLTV", "Churn Reason"
+    ], axis=1, errors='ignore')
 
-    # Drop rows with missing target
-    if 'Churn Value' in df.columns:
-        df = df.dropna(subset=['Churn Value'])
-    else:
-        df = df.dropna(subset=['Churn Label'])
-
-    # Binary encoding
-    binary_cols = ['Partner', 'Dependents', 'Senior Citizen', 'Phone Service', 
-                   'Multiple Lines', 'Paperless Billing']
+    # Encode binary categorical columns
+    binary_cols = [
+        'Partner',
+        'Dependents',
+        'Senior Citizen',
+        'Phone Service',
+        'Multiple Lines',
+        'Paperless Billing',
+    ]
+    binary_map = {
+        'Yes': 1,
+        'No': 0,
+        # common dataset variants
+        'No phone service': 0,
+        'No internet service': 0,
+        True: 1,
+        False: 0,
+        1: 1,
+        0: 0,
+        'Male': 1,
+        'Female': 0,
+    }
     for col in binary_cols:
         if col in df.columns:
-            df[col] = df[col].map({'Yes':1, 'No':0, 'Male':1, 'Female':0, 1:1, 0:0})
+            df[col] = df[col].map(binary_map)
+            # Treat any unknown/blank values as 0 to avoid NaNs breaking training
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-    # Handle numerical columns that might contain empty strings
-    num_cols = ['Tenure Months', 'Monthly Charges', 'Total Charges']
-    for col in num_cols:
-        if col in df.columns:
-            # Replace empty strings or spaces with NaN
-            df[col] = pd.to_numeric(df[col].replace(' ', np.nan), errors='coerce')
-            # Fill NaN with column mean
-            df[col] = df[col].fillna(df[col].mean())
-
-    # One-hot encode categorical features
-    categorical_cols = ['Gender', 'Internet Service', 'Online Security', 'Online Backup',
-                        'Device Protection', 'Tech Support', 'Streaming TV', 'Streaming Movies',
-                        'Contract', 'Payment Method', 'State']
+    # Encode other categorical columns using one-hot encoding
+    categorical_cols = [
+        'Gender', 'Internet Service', 'Online Security', 'Online Backup',
+        'Device Protection', 'Tech Support', 'Streaming TV', 'Streaming Movies',
+        'Contract', 'Payment Method', 'State'
+    ]
     existing_cats = [col for col in categorical_cols if col in df.columns]
-    if existing_cats:
-        encoder = OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore')
-        X_cat = encoder.fit_transform(df[existing_cats])
-        joblib.dump(encoder, ENCODER_PATH)
+    df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
+
+    # Target variable
+    if 'Churn Value' in df.columns:
+        y = df['Churn Value'].map({True: 1, False: 0, 1: 1, 0: 0, 'Yes': 1, 'No': 0})
+    elif 'Churn Label' in df.columns:
+        y = df['Churn Label'].map({'Yes': 1, 'No': 0, True: 1, False: 0, 1: 1, 0: 0})
     else:
-        X_cat = np.array([]).reshape(len(df),0)
+        raise ValueError("No valid target column found. Use 'Churn Value' or 'Churn Label'.")
+    
+    # Convert y to numeric
+    y = pd.to_numeric(y, errors='coerce')
+    
+    X = df.drop(['Churn Value', 'Churn Label'], axis=1, errors='ignore')
 
-    # Numerical columns
-    numerical_cols = df.drop(existing_cats + ['Churn Value', 'Churn Label'], axis=1, errors='ignore').columns
-    X_num = df[numerical_cols].values
+    # Convert numeric columns explicitly and handle any string values
+    numeric_cols = ['Tenure Months', 'Monthly Charges', 'Total Charges']
+    for col in numeric_cols:
+        if col in X.columns:
+            X[col] = pd.to_numeric(X[col], errors='coerce')
+    
+    # Fill any NaN values in numeric columns with median
+    numeric_medians = {}
+    for col in numeric_cols:
+        if col in X.columns:
+            median = X[col].median()
+            numeric_medians[col] = float(median) if pd.notna(median) else 0.0
+            X[col] = X[col].fillna(numeric_medians[col])
+    
+    # Ensure all columns are numeric (select only numeric columns)
+    X = X.select_dtypes(include=[np.number])
 
-    # Combine numerical + categorical
-    X_combined = np.hstack([X_num, X_cat]) if X_cat.size else X_num
+    # As a final safeguard, eliminate any remaining NaNs from unexpected categories.
+    X = X.fillna(0)
+    
+    # Drop rows where target is NaN (must be done after X is prepared)
+    valid_mask = ~y.isna()
+    X = X[valid_mask]
+    y = y[valid_mask]
+    
 
     # Scale features
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X_combined)
-    joblib.dump(scaler, SCALER_PATH)
+    X_scaled = scaler.fit_transform(X)
 
-    # Target
-    if 'Churn Value' in df.columns:
-        y = df['Churn Value'].astype(int)
-    else:
-        y = df['Churn Label'].map({'Yes':1, 'No':0}).astype(int)
+    # Save scaler
+    joblib.dump(scaler, str(SCALER_PATH))
 
-    # Save processed CSV for inspection
+    # Save feature columns (order matters!)
+    joblib.dump(list(X.columns), str(FEATURE_COLUMNS_PATH))
+
+    # Save numeric medians for inference-time NaN handling
+    joblib.dump(numeric_medians, str(NUMERIC_MEDIANS_PATH))
+
+        # Save processed data for inspection
     df.to_csv(PROCESSED_DATA_PATH, index=False)
 
     return X_scaled, y
 
 def split_and_save(X, y):
-    """Split data into train, validation, test sets"""
+    """Split the dataset into train, validation, and test sets."""
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=0.3, stratify=y, random_state=42
     )
+
     X_val, X_test, y_val, y_test = train_test_split(
         X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
     )
+
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 if __name__ == "__main__":
@@ -99,4 +150,4 @@ if __name__ == "__main__":
     X, y = preprocess_data(df)
     X_train, X_val, X_test, y_train, y_val, y_test = split_and_save(X, y)
     print("Data preprocessing complete.")
-    print(f"Train shape: {X_train.shape}, Val shape: {X_val.shape}, Test shape: {X_test.shape}")
+    print(f"Train shape: {X_train.shape}, Validation shape: {X_val.shape}, Test shape: {X_test.shape}")
