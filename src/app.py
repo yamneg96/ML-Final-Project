@@ -11,19 +11,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- Custom Styling ----------------
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
 # ---------------- Load Model Assets ----------------
 @st.cache_resource
 def load_assets():
@@ -41,7 +28,6 @@ except Exception as e:
 
 # ---------------- App Header ----------------
 st.title("📡 Customer Retention Dashboard")
-st.markdown("Enter customer details below to calculate churn risk using the ML Pipeline.")
 
 # ---------------- Input Form ----------------
 with st.container():
@@ -49,40 +35,42 @@ with st.container():
     
     with tab1:
         col1, col2 = st.columns(2)
-        gender = col1.selectbox("Gender", ["Female", "Male"])
-        senior = col2.selectbox("Senior Citizen", ["No", "Yes"])
+        gender = col1.selectbox("gender", ["Female", "Male"])
+        senior = col2.selectbox("SeniorCitizen", ["No", "Yes"])
         partner = col1.selectbox("Partner", ["No", "Yes"])
         dependents = col2.selectbox("Dependents", ["No", "Yes"])
 
     with tab2:
         col1, col2, col3 = st.columns(3)
-        phone = col1.selectbox("Phone Service", ["No", "Yes"])
-        multiple_lines = col1.selectbox("Multiple Lines", ["No", "Yes", "No phone service"])
-        internet = col2.selectbox("Internet Service", ["DSL", "Fiber optic", "No"])
-        online_sec = col2.selectbox("Online Security", ["No", "Yes", "No internet service"])
-        online_bak = col2.selectbox("Online Backup", ["No", "Yes", "No internet service"])
-        protection = col3.selectbox("Device Protection", ["No", "Yes", "No internet service"])
-        tech_support = col3.selectbox("Tech Support", ["No", "Yes", "No internet service"])
-        streaming_tv = col1.selectbox("Streaming TV", ["No", "Yes", "No internet service"])
-        streaming_mov = col2.selectbox("Streaming Movies", ["No", "Yes", "No internet service"])
+        phone = col1.selectbox("PhoneService", ["No", "Yes"])
+        multiple_lines = col1.selectbox("MultipleLines", ["No", "Yes", "No phone service"])
+        internet = col2.selectbox("InternetService", ["DSL", "Fiber optic", "No"])
+        online_sec = col2.selectbox("OnlineSecurity", ["No", "Yes", "No internet service"])
+        online_bak = col2.selectbox("OnlineBackup", ["No", "Yes", "No internet service"])
+        protection = col3.selectbox("DeviceProtection", ["No", "Yes", "No internet service"])
+        tech_support = col3.selectbox("TechSupport", ["No", "Yes", "No internet service"])
+        streaming_tv = col1.selectbox("StreamingTV", ["No", "Yes", "No internet service"])
+        streaming_mov = col2.selectbox("StreamingMovies", ["No", "Yes", "No internet service"])
 
     with tab3:
         col1, col2 = st.columns(2)
-        tenure = col1.slider("Tenure (Months)", 0, 72, 12)
-        contract = col1.selectbox("Contract Type", ["Month-to-month", "One year", "Two year"])
-        paperless = col1.selectbox("Paperless Billing", ["No", "Yes"])
-        payment = col2.selectbox("Payment Method", [
+        tenure = col1.slider("tenure", 0, 72, 12)
+        contract = col1.selectbox("Contract", ["Month-to-month", "One year", "Two year"])
+        paperless = col1.selectbox("PaperlessBilling", ["No", "Yes"])
+        payment = col2.selectbox("PaymentMethod", [
             "Electronic check", "Mailed check", "Bank transfer (automatic)", "Credit card (automatic)"
         ])
-        monthly_charges = col2.number_input("Monthly Charges ($)", 0.0, 200.0, 70.0)
-        total_charges = col2.number_input("Total Charges ($)", 0.0, 10000.0, 1500.0)
+        monthly_charges = col2.number_input("MonthlyCharges", 0.0, 200.0, 70.0)
+        total_charges = col2.number_input("TotalCharges", 0.0, 10000.0, 1500.0)
 
 # ---------------- Prediction Logic ----------------
-st.markdown("---")
 if st.button("🚀 Run Risk Analysis", use_container_width=True):
     
-    # 1. Map inputs to a broad dictionary
-    data = {
+    # Define mapping to match the 11 columns likely used in OneHotEncoding
+    # We exclude the ones that are usually treated as simple Binary (0/1) 
+    # and only include the ones with 3+ categories or those typically OHE'd.
+    
+    input_df = pd.DataFrame([{
         'gender': gender,
         'SeniorCitizen': 1 if senior == "Yes" else 0,
         'Partner': partner,
@@ -102,65 +90,39 @@ if st.button("🚀 Run Risk Analysis", use_container_width=True):
         'PaymentMethod': payment,
         'MonthlyCharges': monthly_charges,
         'TotalCharges': total_charges
-    }
-    
-    df_input = pd.DataFrame([data])
+    }])
 
-    # 2. THE 11-COLUMN CATEGORICAL LIST
-    # These are the 11 columns most commonly encoded in Telco projects
+    # THE MAGIC 11: These are the columns to send to the OneHotEncoder
+    # If this fails, the issue is which specific 11 were chosen.
     cat_features = [
-        'MultipleLines', 'InternetService', 'OnlineSecurity', 
-        'OnlineBackup', 'DeviceProtection', 'TechSupport', 
-        'StreamingTV', 'StreamingMovies', 'Contract', 
-        'PaymentMethod', 'PaperlessBilling'
+        'gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines', 
+        'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 
+        'TechSupport', 'Contract'
     ]
     
-    # 3. THE 3-COLUMN NUMERICAL LIST
     num_features = ['tenure', 'MonthlyCharges', 'TotalCharges']
 
     try:
-        # Preprocessing
-        # Note: If your encoder complains about names, check the "Debug" output in the except block
-        X_cat = encoder.transform(df_input[cat_features])
-        X_num = df_input[num_features].values
+        # 1. Transform categorical (11 columns)
+        X_cat = encoder.transform(input_df[cat_features])
         
-        # Combine (Numerical + Categorical)
+        # 2. Extract numerical (3 columns)
+        X_num = input_df[num_features].values
+        
+        # 3. Combine
         X_combined = np.hstack([X_num, X_cat])
+        
+        # 4. Scale and Predict
         X_scaled = scaler.transform(X_combined)
+        prob = model.predict_proba(X_scaled)[:, 1][0]
 
-        # Predict
-        churn_prob = model.predict_proba(X_scaled)[:, 1][0]
-        churn_pred = churn_prob > 0.5
+        # UI Results
+        st.divider()
+        c1, c2 = st.columns(2)
+        c1.metric("Risk Level", "HIGH" if prob > 0.5 else "LOW")
+        c2.metric("Probability", f"{prob*100:.1f}%")
+        st.progress(int(prob*100))
 
-        # ---------------- Results UI ----------------
-        st.subheader("📊 Analysis Results")
-        res_col1, res_col2, res_col3 = st.columns([1, 1, 2])
-
-        with res_col1:
-            status = "HIGH RISK" if churn_pred else "STABLE"
-            st.metric("Customer Status", status)
-
-        with res_col2:
-            st.metric("Churn Probability", f"{churn_prob*100:.1f}%")
-
-        with res_col3:
-            st.write("Risk Confidence Level:")
-            if churn_prob > 0.7:
-                st.error("Critical Risk: Immediate Action Needed")
-            elif churn_prob > 0.4:
-                st.warning("Moderate Risk: Monitor Closely")
-            else:
-                st.success("Low Risk: Customer is Stable")
-            st.progress(int(churn_prob * 100))
-            
-    except ValueError as ve:
-        st.error("🚨 **Feature Count Mismatch**")
-        st.write(f"The encoder expects **{len(encoder.feature_names_in_)}** features.")
-        st.write("Specifically, your encoder was trained on these columns:")
-        st.code(list(encoder.feature_names_in_))
-        st.info("Update the `cat_features` list in the code to match the names above exactly.")
     except Exception as e:
-        st.error(f"An unexpected error occurred: {e}")
-
-st.markdown("---")
-st.caption("Internal Telecom Tool • Model v1.0.5")
+        st.error(f"Error during transformation: {e}")
+        st.info("The model expects 11 categorical features. If this persists, we need to check your training script's column selection.")
