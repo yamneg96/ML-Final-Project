@@ -6,6 +6,7 @@ scikit-learn
 # Visualization libraries
 matplotlib
 seaborn
+altair==6.0.0  # <-- needed for Streamlit internals
 
 # Machine learning utilities
 joblib
