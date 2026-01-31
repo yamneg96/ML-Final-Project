@@ -182,3 +182,53 @@ def _pick_model_path(cli_model: str | None) -> Path:
         f"{RF_MODEL_PATH}, {LR_MODEL_PATH}, {BEST_MODEL_PATH}. "
         "Run `python3 src/pipeline.py` to train and save models."
     )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Predict churn for new customers from a CSV file.")
+    parser.add_argument(
+        "--input",
+        default=str(REPO_ROOT / "data/raw/new_customers.csv"),
+        help="Path to input CSV of new customers (default: data/raw/new_customers.csv).",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(REPO_ROOT / "results/new_customer_predictions.csv"),
+        help="Path to output CSV (default: results/new_customer_predictions.csv).",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Optional path to a model .pkl (default: auto-pick from models/).",
+    )
+    args = parser.parse_args()
+
+    in_path = Path(args.input)
+    if not in_path.is_absolute():
+        in_path = (REPO_ROOT / in_path).resolve()
+    if not in_path.exists():
+        raise FileNotFoundError(
+            f"Input CSV not found: {in_path}. "
+            "Provide --input, e.g. `--input data/processed/churn_processed.csv` for a quick sanity check."
+        )
+
+    out_path = Path(args.output)
+    if not out_path.is_absolute():
+        out_path = (REPO_ROOT / out_path).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model_path = _pick_model_path(args.model)
+    model = joblib.load(str(model_path))
+
+    new_data = pd.read_csv(in_path)
+    X_new = preprocess_new_customer(new_data)
+    churn_pred = model.predict(X_new)
+    churn_prob = (
+        model.predict_proba(X_new)[:, 1] if hasattr(model, "predict_proba") else churn_pred
+    )
+
+    out_df = new_data.copy()
+    out_df["Churn_Prediction"] = churn_pred
+    out_df["Churn_Probability"] = churn_prob
+    out_df.to_csv(out_path, index=False)
+    print(f"Predictions saved to {out_path} (model: {model_path.name})")
