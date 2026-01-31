@@ -162,3 +162,23 @@ def preprocess_new_customer(df: pd.DataFrame) -> np.ndarray:
     scaler = joblib.load(str(SCALER_PATH))
     # Pass a DataFrame to preserve feature names and avoid sklearn warnings.
     return scaler.transform(X)
+
+
+def _pick_model_path(cli_model: str | None) -> Path:
+    if cli_model:
+        p = Path(cli_model)
+        if not p.is_absolute():
+            p = (REPO_ROOT / p).resolve()
+        if not p.exists():
+            raise FileNotFoundError(f"--model path does not exist: {p}")
+        return p
+
+    for p in (RF_MODEL_PATH, LR_MODEL_PATH, BEST_MODEL_PATH):
+        if p.exists():
+            return p
+
+    raise FileNotFoundError(
+        "No model file found. Expected one of: "
+        f"{RF_MODEL_PATH}, {LR_MODEL_PATH}, {BEST_MODEL_PATH}. "
+        "Run `python3 src/pipeline.py` to train and save models."
+    )
