@@ -19,3 +19,9 @@ def load_data():
 
 def preprocess_data(df):
     """Preprocess the telecom churn dataset based on column names."""
+
+        # Drop irrelevant columns
+    df = df.drop([
+        "CustomerID", "Count", "Country", "City", "Zip Code",
+        "Lat Long", "Latitude", "Longitude", "Churn Score", "CLTV", "Churn Reason"
+    ], axis=1, errors='ignore')
