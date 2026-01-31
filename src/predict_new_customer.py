@@ -74,3 +74,26 @@ DROP_COLS = [
 ]
 
 TARGET_COLS = ["Churn Value", "Churn Label"]
+
+
+def _load_feature_columns() -> list[str]:
+    """
+    Preferred: load `models/feature_columns.pkl` saved during preprocessing.
+    Fallback: derive from `data/processed/churn_processed.csv` if present.
+    """
+    if FEATURE_COLUMNS_PATH.exists():
+        cols = joblib.load(str(FEATURE_COLUMNS_PATH))
+        return list(cols)
+
+    processed_path = REPO_ROOT / "data/processed/churn_processed.csv"
+    if processed_path.exists():
+        df = pd.read_csv(processed_path)
+        X = df.drop(TARGET_COLS, axis=1, errors="ignore")
+        X = X.select_dtypes(include=[np.number])
+        return list(X.columns)
+
+    raise FileNotFoundError(
+        "Could not find training feature columns. "
+        f"Expected {FEATURE_COLUMNS_PATH} (preferred) or {processed_path} (fallback). "
+        "Run `python3 src/data_preprocessing.py` first."
+    )
