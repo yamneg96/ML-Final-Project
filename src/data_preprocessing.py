@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import joblib
@@ -37,20 +38,42 @@ def preprocess_data(df):
     categorical_cols = [
         'Gender', 'Internet Service', 'Online Security', 'Online Backup',
         'Device Protection', 'Tech Support', 'Streaming TV', 'Streaming Movies',
-        'Contract', 'Payment Method'
+        'Contract', 'Payment Method', 'State'
     ]
     existing_cats = [col for col in categorical_cols if col in df.columns]
     df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
 
         # Target variable
     if 'Churn Value' in df.columns:
-        y = df['Churn Value'].map({True: 1, False: 0})
+        y = df['Churn Value'].map({True: 1, False: 0, 1: 1, 0: 0, 'Yes': 1, 'No': 0})
     elif 'Churn Label' in df.columns:
-        y = df['Churn Label'].map({'Yes': 1, 'No': 0})
+        y = df['Churn Label'].map({'Yes': 1, 'No': 0, True: 1, False: 0, 1: 1, 0: 0})
     else:
         raise ValueError("No valid target column found. Use 'Churn Value' or 'Churn Label'.")
     
+    # Convert y to numeric
+    y = pd.to_numeric(y, errors='coerce')
+    
     X = df.drop(['Churn Value', 'Churn Label'], axis=1, errors='ignore')
+
+    # Convert numeric columns explicitly and handle any string values
+    numeric_cols = ['Tenure Months', 'Monthly Charges', 'Total Charges']
+    for col in numeric_cols:
+        if col in X.columns:
+            X[col] = pd.to_numeric(X[col], errors='coerce')
+    
+    # Fill any NaN values in numeric columns with median
+    for col in numeric_cols:
+        if col in X.columns:
+            X[col] = X[col].fillna(X[col].median())
+    
+    # Ensure all columns are numeric (select only numeric columns)
+    X = X.select_dtypes(include=[np.number])
+    
+    # Drop rows where target is NaN (must be done after X is prepared)
+    valid_mask = ~y.isna()
+    X = X[valid_mask]
+    y = y[valid_mask]
 
         # Scale features
     scaler = StandardScaler()
