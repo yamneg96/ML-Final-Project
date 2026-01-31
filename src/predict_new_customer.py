@@ -21,3 +21,13 @@ import numpy as np
 import pandas as pd
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+SCALER_PATH = REPO_ROOT / "models/scaler.pkl"
+FEATURE_COLUMNS_PATH = REPO_ROOT / "models/feature_columns.pkl"
+NUMERIC_MEDIANS_PATH = REPO_ROOT / "models/numeric_medians.pkl"
+
+# Model paths (we'll pick the first one that exists unless --model is provided)
+RF_MODEL_PATH = REPO_ROOT / "models/random_forest_model.pkl"
+LR_MODEL_PATH = REPO_ROOT / "models/logistic_model.pkl"
+BEST_MODEL_PATH = REPO_ROOT / "models/best_model.pkl"
