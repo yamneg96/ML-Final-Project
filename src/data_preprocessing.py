@@ -61,3 +61,5 @@ def preprocess_data(df):
 
         # Save processed data for inspection
     df.to_csv(PROCESSED_DATA_PATH, index=False)
+
+    return X_scaled, y
