@@ -14,7 +14,6 @@ st.set_page_config(
 # ---------------- Load Model Assets ----------------
 @st.cache_resource
 def load_assets():
-    # Relative pathing for Streamlit Cloud
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     scaler = joblib.load(os.path.join(BASE_DIR, "models", "scaler.pkl"))
     encoder = joblib.load(os.path.join(BASE_DIR, "models", "encoder.pkl"))
@@ -29,7 +28,6 @@ except Exception as e:
 
 # ---------------- App Header ----------------
 st.title("📡 Customer Retention Dashboard")
-st.markdown("Enter customer details below to calculate churn risk.")
 
 # ---------------- Input Form ----------------
 with st.container():
@@ -38,7 +36,7 @@ with st.container():
     with tab1:
         col1, col2 = st.columns(2)
         gender = col1.selectbox("Gender", ["Female", "Male"])
-        senior = col2.selectbox("Senior Citizen", ["No", "Yes"])
+        senior_citizen = col2.selectbox("Senior Citizen", ["No", "Yes"]) # Changed variable name to senior_citizen
         partner = col1.selectbox("Partner", ["No", "Yes"])
         dependents = col2.selectbox("Dependents", ["No", "Yes"])
 
@@ -69,80 +67,40 @@ with st.container():
 st.markdown("---")
 if st.button("🚀 Run Risk Analysis", use_container_width=True):
     
-    # Create the dataframe with exact names expected by the Encoder
-    input_df = pd.DataFrame([{
-        'gender': gender,
-        'SeniorCitizen': 1 if senior == "Yes" else 0,
-        'Partner': partner,
-        'Dependents': dependents,
-        'tenure': tenure,
-        'PhoneService': phone,
-        'MultipleLines': multiple_lines,
-        'InternetService': internet,
-        'OnlineSecurity': online_sec,
-        'OnlineBackup': online_bak,
-        'DeviceProtection': protection,
-        'TechSupport': tech_support,
-        'StreamingTV': streaming_tv,
-        'StreamingMovies': streaming_mov,
-        'Contract': contract,
-        'PaperlessBilling': paperless,
-        'PaymentMethod': payment,
-        'MonthlyCharges': monthly_charges,
-        'TotalCharges': total_charges
-    }])
-
-    # THE ALIGNMENT:
-    # 1. Your Encoder expects 11 columns to perform its logic.
-    cat_features_for_encoder = [
-        'gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines', 
-        'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 
-        'TechSupport', 'Contract'
-    ]
-    
-    # 2. Your Scaler expects exactly 9 features.
-    # This usually means 3 Numerical + 6 specific encoded outputs.
-    num_features = ['tenure', 'MonthlyCharges', 'TotalCharges']
-
     try:
-        # Step A: Transform Categorical
-        X_cat_encoded = encoder.transform(input_df[cat_features_for_encoder])
+        # 1. Manual Binary Mapping (The 6 Categorical Features)
+        # This assumes your 9-feature scaler wants: 3 Numerics + 6 Binaries
+        val_senior = 1 if senior_citizen == "Yes" else 0
+        val_partner = 1 if partner == "Yes" else 0
+        val_dependents = 1 if dependents == "Yes" else 0
+        val_phone = 1 if phone == "Yes" else 0
+        val_paperless = 1 if paperless == "Yes" else 0
+        val_gender = 1 if gender == "Male" else 0
+
+        cat_values = [val_senior, val_partner, val_dependents, val_phone, val_paperless, val_gender]
         
-        # Step B: Get Numerical
-        X_num = input_df[num_features].values
-        
-        # Step C: Combine
-        # If your encoder dropped columns, this will be 3 + 6 = 9.
-        X_combined = np.hstack([X_num, X_cat_encoded])
-        
-        # Step D: Scale
+        # 2. Numerical Values
+        num_values = [float(tenure), float(monthly_charges), float(total_charges)]
+
+        # 3. Combine into the expected 9-feature array
+        # Try Numeric first, then Categorical
+        X_combined = np.array([num_values + cat_values]) 
+
+        # 4. Scale and Predict
+        # 
         X_scaled = scaler.transform(X_combined)
-        
-        # Step E: Predict
         prob = model.predict_proba(X_scaled)[:, 1][0]
-        is_churn = prob > 0.5
 
         # ---------------- Results UI ----------------
         st.subheader("📊 Analysis Results")
         c1, c2 = st.columns(2)
-        
-        with c1:
-            label = "🚨 HIGH RISK" if is_churn else "✅ STABLE"
-            st.metric("Customer Status", label)
-        
-        with c2:
-            st.metric("Churn Probability", f"{prob*100:.1f}%")
-            
+        c1.metric("Churn Risk", "HIGH" if prob > 0.5 else "LOW")
+        c2.metric("Probability", f"{prob*100:.1f}%")
         st.progress(int(prob * 100))
-        
-        if is_churn:
-            st.error("This customer shows high behavior patterns consistent with churn.")
-        else:
-            st.success("This customer is likely to stay with the current service plan.")
 
     except Exception as e:
         st.error(f"Transformation Error: {e}")
-        st.info("Check if the order of [X_num, X_cat] matches your training script.")
+        st.info("If it still says 'expects 9 but got X', we need to swap the order of Numeric and Categorical features.")
 
 st.markdown("---")
-st.caption("Internal Telecom Tool • Model v1.0.6")
+st.caption("Internal Telecom Tool • Model v1.0.7")
