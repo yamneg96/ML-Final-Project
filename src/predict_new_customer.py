@@ -104,3 +104,61 @@ def _load_numeric_medians() -> dict[str, float]:
         d = joblib.load(str(NUMERIC_MEDIANS_PATH))
         return {str(k): float(v) for k, v in dict(d).items()}
     return {}
+
+
+def preprocess_new_customer(df: pd.DataFrame) -> np.ndarray:
+    df = df.copy()
+
+    # Drop irrelevant columns (safe for both train-like and truly-new schemas)
+    df = df.drop(DROP_COLS, axis=1, errors="ignore")
+
+    # Binary mapping
+    binary_map = {
+        "Yes": 1,
+        "No": 0,
+        "No phone service": 0,
+        "No internet service": 0,
+        True: 1,
+        False: 0,
+        1: 1,
+        0: 0,
+    }
+    for col in BINARY_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].map(binary_map), errors="coerce").fillna(0)
+
+    # One-hot encode categoricals using the same approach as training
+    existing_cats = [c for c in CATEGORICAL_COLS if c in df.columns]
+    if existing_cats:
+        df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
+
+    # Drop target columns if present (e.g., if user passed processed/training data)
+    df = df.drop(TARGET_COLS, axis=1, errors="ignore")
+
+    # Coerce numeric columns and fill NaNs with training medians (if available)
+    numeric_medians = _load_numeric_medians()
+    for col in NUMERIC_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if col in numeric_medians:
+                df[col] = df[col].fillna(numeric_medians[col])
+
+    # Keep numeric only (matches training-time `select_dtypes`)
+    X = df.select_dtypes(include=[np.number])
+    X = X.fillna(0)
+
+    # Align columns to training feature set (adds missing columns as 0, drops extra columns)
+    feature_cols = _load_feature_columns()
+    for c in feature_cols:
+        if c not in X.columns:
+            X[c] = 0
+    X = X[feature_cols]
+
+    # Scale (order must match feature_cols)
+    if not SCALER_PATH.exists():
+        raise FileNotFoundError(
+            f"Scaler not found at {SCALER_PATH}. Run `python3 src/data_preprocessing.py` first."
+        )
+    scaler = joblib.load(str(SCALER_PATH))
+    # Pass a DataFrame to preserve feature names and avoid sklearn warnings.
+    return scaler.transform(X)
