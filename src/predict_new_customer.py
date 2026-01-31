@@ -31,3 +31,28 @@ NUMERIC_MEDIANS_PATH = REPO_ROOT / "models/numeric_medians.pkl"
 RF_MODEL_PATH = REPO_ROOT / "models/random_forest_model.pkl"
 LR_MODEL_PATH = REPO_ROOT / "models/logistic_model.pkl"
 BEST_MODEL_PATH = REPO_ROOT / "models/best_model.pkl"
+
+
+# Columns for preprocessing (should match `src/data_preprocessing.py`)
+BINARY_COLS = [
+    "Partner",
+    "Dependents",
+    "Senior Citizen",
+    "Phone Service",
+    "Multiple Lines",
+    "Paperless Billing",
+]
+
+CATEGORICAL_COLS = [
+    "Gender",
+    "Internet Service",
+    "Online Security",
+    "Online Backup",
+    "Device Protection",
+    "Tech Support",
+    "Streaming TV",
+    "Streaming Movies",
+    "Contract",
+    "Payment Method",
+    "State",
+]
