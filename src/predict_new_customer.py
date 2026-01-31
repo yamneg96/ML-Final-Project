@@ -56,3 +56,21 @@ CATEGORICAL_COLS = [
     "Payment Method",
     "State",
 ]
+
+NUMERIC_COLS = ["Tenure Months", "Monthly Charges", "Total Charges"]
+
+DROP_COLS = [
+    "CustomerID",
+    "Count",
+    "Country",
+    "City",
+    "Zip Code",
+    "Lat Long",
+    "Latitude",
+    "Longitude",
+    "Churn Score",
+    "CLTV",
+    "Churn Reason",
+]
+
+TARGET_COLS = ["Churn Value", "Churn Label"]
