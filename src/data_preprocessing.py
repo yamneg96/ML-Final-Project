@@ -16,3 +16,6 @@ os.makedirs(os.path.dirname(SCALER_PATH), exist_ok=True)
 def load_data():
     """Load data from Excel file."""
     return pd.read_excel(RAW_DATA_PATH)
+
+def preprocess_data(df):
+    """Preprocess the telecom churn dataset based on column names."""
