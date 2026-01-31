@@ -51,3 +51,7 @@ def preprocess_data(df):
         raise ValueError("No valid target column found. Use 'Churn Value' or 'Churn Label'.")
     
     X = df.drop(['Churn Value', 'Churn Label'], axis=1, errors='ignore')
+
+        # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
