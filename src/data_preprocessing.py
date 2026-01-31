@@ -58,3 +58,6 @@ def preprocess_data(df):
 
         # Save scaler
     joblib.dump(scaler, SCALER_PATH)
+
+        # Save processed data for inspection
+    df.to_csv(PROCESSED_DATA_PATH, index=False)
