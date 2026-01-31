@@ -1,0 +1,4 @@
+Partner,Dependents,Senior Citizen,Phone Service,Multiple Lines,Paperless Billing,Tenure Months,Monthly Charges,Total Charges,Gender,Internet Service,Online Security,Online Backup,Device Protection,Tech Support,Streaming TV,Streaming Movies,Contract,Payment Method,State,Churn_Prediction,Churn_Probability
+1,0,0,1,0,1,12,70,840,Male,Fiber Optic,Yes,No,Yes,No,Yes,No,Month-to-month,Credit Card,California,0,0.26191972124147705
+0,1,1,1,1,0,24,60,1440,Female,DSL,No,Yes,No,Yes,No,Yes,One year,Bank Transfer,Texas,0,0.10505102752262112
+1,1,0,0,0,1,36,80,2880,Male,Fiber Optic,Yes,Yes,Yes,Yes,Yes,Yes,Two year,Electronic Check,Florida,0,0.03486679992932207

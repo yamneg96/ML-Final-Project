@@ -29,4 +29,3 @@ def save_model(model, name="best_model.pkl"):
     """Save trained model to disk."""
     joblib.dump(model, f"{MODEL_DIR}{name}")
     print(f"Model saved as {MODEL_DIR}{name}")
-
