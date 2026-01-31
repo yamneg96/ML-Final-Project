@@ -25,3 +25,10 @@ def preprocess_data(df):
         "CustomerID", "Count", "Country", "City", "Zip Code",
         "Lat Long", "Latitude", "Longitude", "Churn Score", "CLTV", "Churn Reason"
     ], axis=1, errors='ignore')
+
+        # Encode binary categorical columns
+    binary_cols = ['Partner', 'Dependents', 'Senior Citizen', 'Phone Service', 'Multiple Lines', 
+                   'Paperless Billing']
+    for col in binary_cols:
+        if col in df.columns:
+            df[col] = df[col].map({'Yes': 1, 'No': 0, 'Male': 1, 'Female': 0, 1: 1, 0: 0})
