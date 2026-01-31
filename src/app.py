@@ -1,11 +1,5 @@
 """
 Telecom Churn Prediction Web App
-
-Purpose:
-Let a user input customer data and get churn prediction + probability.
-
-Run:
-streamlit run src/app.py
 """
 
 import streamlit as st
@@ -15,25 +9,23 @@ import joblib
 import os
 
 # ---------------- Page Config ----------------
-st.set_page_config(
-    page_title="Telecom Churn Predictor",
-    page_icon="📊",
-    layout="centered"
-)
+st.set_page_config(page_title="Telecom Churn Predictor", page_icon="📊", layout="centered")
 
 # ---------------- Paths ----------------
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-SCALER_PATH  = os.path.join(BASE_DIR, "models", "scaler.pkl")
-ENCODER_PATH = os.path.join(BASE_DIR, "models", "encoder.pkl")
-MODEL_PATH   = os.path.join(BASE_DIR, "models", "best_model.pkl")
+SCALER_PATH   = os.path.join(BASE_DIR, "models", "scaler.pkl")
+ENCODER_PATH  = os.path.join(BASE_DIR, "models", "encoder.pkl")
+MODEL_PATH    = os.path.join(BASE_DIR, "models", "best_model.pkl")
+FEATURES_PATH = os.path.join(BASE_DIR, "models", "feature_columns.pkl")
 
 # ---------------- Load Objects ----------------
-scaler  = joblib.load(SCALER_PATH)
-encoder = joblib.load(ENCODER_PATH)
-model   = joblib.load(MODEL_PATH)
+scaler   = joblib.load(SCALER_PATH)
+encoder  = joblib.load(ENCODER_PATH)
+model    = joblib.load(MODEL_PATH)
+features = joblib.load(FEATURES_PATH)
 
-# ---------------- Feature Columns ----------------
+# ---------------- Feature Groups ----------------
 binary_cols = [
     'Partner','Dependents','Senior Citizen',
     'Phone Service','Multiple Lines','Paperless Billing'
@@ -51,12 +43,7 @@ numeric_cols = [
 
 # ---------------- UI ----------------
 st.title("📊 Telecom Customer Churn Predictor")
-
-st.markdown("""
-This application predicts **customer churn probability** based on customer attributes.
-Fill in the details below and click **Predict Churn**.
-""")
-
+st.markdown("Fill in the customer details below:")
 st.markdown("---")
 
 # ---------------- Input Form ----------------
@@ -89,7 +76,7 @@ with st.form("customer_form"):
 # ---------------- Prediction ----------------
 if submit:
 
-    data_dict = {
+    row = {
         **inputs_binary,
         **inputs_cat,
         "Tenure Months": tenure,
@@ -97,18 +84,27 @@ if submit:
         "Total Charges": total_charges
     }
 
-    df_new = pd.DataFrame([data_dict])
+    df_new = pd.DataFrame([row])
 
-    binary_map = {"Yes": 1, "No": 0}
+    # Map binary
     for col in binary_cols:
-        df_new[col] = df_new[col].map(binary_map)
+        df_new[col] = df_new[col].map({"Yes": 1, "No": 0})
 
+    # Encode categorical
     X_cat = encoder.transform(df_new[categorical_cols])
-    X_num = df_new[numeric_cols].values
+    X_cat = pd.DataFrame(X_cat, columns=encoder.get_feature_names_out(categorical_cols))
 
-    X_combined = np.hstack([X_num, X_cat])
-    X_scaled = scaler.transform(X_combined)
+    # Combine numeric + encoded
+    X_num = df_new[numeric_cols].reset_index(drop=True)
+    X_all = pd.concat([X_num, X_cat], axis=1)
 
+    # Ensure EXACT feature order
+    X_all = X_all.reindex(columns=features, fill_value=0)
+
+    # Scale
+    X_scaled = scaler.transform(X_all)
+
+    # Predict
     churn_pred = model.predict(X_scaled)[0]
     churn_prob = model.predict_proba(X_scaled)[0][1]
 
@@ -121,12 +117,3 @@ if submit:
         st.success("✅ Low Risk: Customer is likely to stay")
 
     st.metric("Churn Probability", f"{churn_prob:.2%}")
-
-    if churn_prob < 0.3:
-        risk = "Low Risk 🟢"
-    elif churn_prob < 0.6:
-        risk = "Medium Risk 🟡"
-    else:
-        risk = "High Risk 🔴"
-
-    st.info(f"Risk Level: **{risk}**")
