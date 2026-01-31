@@ -3,6 +3,7 @@ from data_preprocessing import load_data, preprocess_data, split_and_save
 from train import train_logistic, train_random_forest, save_model
 from evaluate import evaluate_model
 import pandas as pd
+from pathlib import Path
 
 if __name__ == "__main__":
     # Load & preprocess
@@ -29,5 +30,9 @@ if __name__ == "__main__":
     print(results)
 
     # Save results
-    results.to_csv("../results/model_comparison.csv")
-    print("Pipeline complete. Results saved to ../results/model_comparison.csv")
+    repo_root = Path(__file__).resolve().parents[1]
+    results_dir = repo_root / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
+    out_path = results_dir / "model_comparison.csv"
+    results.to_csv(out_path, index=True)
+    print(f"Pipeline complete. Results saved to {out_path}")
