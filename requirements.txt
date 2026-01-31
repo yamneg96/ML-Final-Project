@@ -1,6 +1,11 @@
+# Core data science libraries
 numpy
 pandas
 scikit-learn
+# Visualization libraries
 matplotlib
 seaborn
+# Machine learning utilities
 joblib
+# Excel file handling
+openpyxl
