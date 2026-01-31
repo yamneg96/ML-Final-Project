@@ -1,84 +1,238 @@
-import pandas as pd
+"""
+src/predict_new_customer.py
+
+Predict churn for new customer rows.
+
+This script intentionally mirrors the preprocessing logic in `src/data_preprocessing.py`:
+- Drop irrelevant columns
+- Binary mapping for selected Yes/No columns
+- One-hot encode selected categoricals using pandas.get_dummies(drop_first=True)
+- Align columns to the training-time feature set (order matters!)
+- Scale with the saved StandardScaler
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
 import joblib
 import numpy as np
-import os
+import pandas as pd
 
-# ---------------- Paths ----------------
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SCALER_PATH = os.path.join(BASE_DIR, "models", "scaler.pkl")
-ENCODER_PATH = os.path.join(BASE_DIR, "models", "encoder.pkl")
-MODEL_PATH  = os.path.join(BASE_DIR, "models", "best_model.pkl")
-INPUT_PATH  = os.path.join(BASE_DIR, "data", "raw", "new_customers.csv")  # your test CSV
-OUTPUT_PATH = os.path.join(BASE_DIR, "results", "new_customer_predictions.csv")
 
-# Ensure results folder exists
-os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# ---------------- Load saved objects ----------------
-scaler = joblib.load(SCALER_PATH)
-encoder = joblib.load(ENCODER_PATH)
-model  = joblib.load(MODEL_PATH)
+SCALER_PATH = REPO_ROOT / "models/scaler.pkl"
+FEATURE_COLUMNS_PATH = REPO_ROOT / "models/feature_columns.pkl"
+NUMERIC_MEDIANS_PATH = REPO_ROOT / "models/numeric_medians.pkl"
 
-# ---------------- Columns ----------------
-binary_cols = [
-    'Partner','Dependents','Senior Citizen',
-    'Phone Service','Multiple Lines','Paperless Billing'
+# Model paths (we'll pick the first one that exists unless --model is provided)
+RF_MODEL_PATH = REPO_ROOT / "models/random_forest_model.pkl"
+LR_MODEL_PATH = REPO_ROOT / "models/logistic_model.pkl"
+BEST_MODEL_PATH = REPO_ROOT / "models/best_model.pkl"
+
+
+# Columns for preprocessing (should match `src/data_preprocessing.py`)
+BINARY_COLS = [
+    "Partner",
+    "Dependents",
+    "Senior Citizen",
+    "Phone Service",
+    "Multiple Lines",
+    "Paperless Billing",
 ]
 
-categorical_cols = [
-    'Gender','Internet Service','Online Security','Online Backup',
-    'Device Protection','Tech Support','Streaming TV','Streaming Movies',
-    'Contract','Payment Method','State'
+CATEGORICAL_COLS = [
+    "Gender",
+    "Internet Service",
+    "Online Security",
+    "Online Backup",
+    "Device Protection",
+    "Tech Support",
+    "Streaming TV",
+    "Streaming Movies",
+    "Contract",
+    "Payment Method",
+    "State",
 ]
 
-numerical_cols = [
-    'Tenure Months','Monthly Charges','Total Charges'
+NUMERIC_COLS = ["Tenure Months", "Monthly Charges", "Total Charges"]
+
+DROP_COLS = [
+    "CustomerID",
+    "Count",
+    "Country",
+    "City",
+    "Zip Code",
+    "Lat Long",
+    "Latitude",
+    "Longitude",
+    "Churn Score",
+    "CLTV",
+    "Churn Reason",
 ]
 
-def preprocess_new_customer(df):
-    """Preprocess new customer data for prediction."""
+TARGET_COLS = ["Churn Value", "Churn Label"]
 
-    # --- Binary mapping ---
-    for col in binary_cols:
-        if col not in df.columns:
-            df[col] = 0  # default 0 if missing
-        df[col] = df[col].map({'Yes':1,'No':0,'Male':1,'Female':0,1:1,0:0})
 
-    # --- Fill missing numerical columns ---
-    for col in numerical_cols:
-        if col not in df.columns:
-            df[col] = 0
-    X_num = df[numerical_cols].fillna(0).values
+def _load_feature_columns() -> list[str]:
+    """
+    Preferred: load `models/feature_columns.pkl` saved during preprocessing.
+    Fallback: derive from `data/processed/churn_processed.csv` if present.
+    """
+    if FEATURE_COLUMNS_PATH.exists():
+        cols = joblib.load(str(FEATURE_COLUMNS_PATH))
+        return list(cols)
 
-    # --- Ensure all categorical columns exist ---
-    for col in categorical_cols:
-        if col not in df.columns:
-            df[col] = 'Unknown'  # default category
+    processed_path = REPO_ROOT / "data/processed/churn_processed.csv"
+    if processed_path.exists():
+        df = pd.read_csv(processed_path)
+        X = df.drop(TARGET_COLS, axis=1, errors="ignore")
+        X = X.select_dtypes(include=[np.number])
+        return list(X.columns)
 
-    X_cat = encoder.transform(df[categorical_cols])
+    raise FileNotFoundError(
+        "Could not find training feature columns. "
+        f"Expected {FEATURE_COLUMNS_PATH} (preferred) or {processed_path} (fallback). "
+        "Run `python3 src/data_preprocessing.py` first."
+    )
 
-    # --- Combine numeric + categorical ---
-    X_combined = np.hstack([X_num, X_cat])
 
-    # --- Scale ---
-    X_scaled = scaler.transform(X_combined)
-    return X_scaled
+def _load_numeric_medians() -> dict[str, float]:
+    if NUMERIC_MEDIANS_PATH.exists():
+        d = joblib.load(str(NUMERIC_MEDIANS_PATH))
+        return {str(k): float(v) for k, v in dict(d).items()}
+    return {}
 
-# ---------------- Main ----------------
-if __name__ == "__main__":
-    # Load new customer data
-    new_data = pd.read_csv(INPUT_PATH)
 
-    # Preprocess
+def preprocess_new_customer(df: pd.DataFrame) -> np.ndarray:
+    df = df.copy()
+
+    # Drop irrelevant columns (safe for both train-like and truly-new schemas)
+    df = df.drop(DROP_COLS, axis=1, errors="ignore")
+
+    # Binary mapping
+    binary_map = {
+        "Yes": 1,
+        "No": 0,
+        "No phone service": 0,
+        "No internet service": 0,
+        True: 1,
+        False: 0,
+        1: 1,
+        0: 0,
+    }
+    for col in BINARY_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col].map(binary_map), errors="coerce").fillna(0)
+
+    # One-hot encode categoricals using the same approach as training
+    existing_cats = [c for c in CATEGORICAL_COLS if c in df.columns]
+    if existing_cats:
+        df = pd.get_dummies(df, columns=existing_cats, drop_first=True)
+
+    # Drop target columns if present (e.g., if user passed processed/training data)
+    df = df.drop(TARGET_COLS, axis=1, errors="ignore")
+
+    # Coerce numeric columns and fill NaNs with training medians (if available)
+    numeric_medians = _load_numeric_medians()
+    for col in NUMERIC_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            if col in numeric_medians:
+                df[col] = df[col].fillna(numeric_medians[col])
+
+    # Keep numeric only (matches training-time `select_dtypes`)
+    X = df.select_dtypes(include=[np.number])
+    X = X.fillna(0)
+
+    # Align columns to training feature set (adds missing columns as 0, drops extra columns)
+    feature_cols = _load_feature_columns()
+    for c in feature_cols:
+        if c not in X.columns:
+            X[c] = 0
+    X = X[feature_cols]
+
+    # Scale (order must match feature_cols)
+    if not SCALER_PATH.exists():
+        raise FileNotFoundError(
+            f"Scaler not found at {SCALER_PATH}. Run `python3 src/data_preprocessing.py` first."
+        )
+    scaler = joblib.load(str(SCALER_PATH))
+    # Pass a DataFrame to preserve feature names and avoid sklearn warnings.
+    return scaler.transform(X)
+
+
+def _pick_model_path(cli_model: str | None) -> Path:
+    if cli_model:
+        p = Path(cli_model)
+        if not p.is_absolute():
+            p = (REPO_ROOT / p).resolve()
+        if not p.exists():
+            raise FileNotFoundError(f"--model path does not exist: {p}")
+        return p
+
+    for p in (RF_MODEL_PATH, LR_MODEL_PATH, BEST_MODEL_PATH):
+        if p.exists():
+            return p
+
+    raise FileNotFoundError(
+        "No model file found. Expected one of: "
+        f"{RF_MODEL_PATH}, {LR_MODEL_PATH}, {BEST_MODEL_PATH}. "
+        "Run `python3 src/pipeline.py` to train and save models."
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Predict churn for new customers from a CSV file.")
+    parser.add_argument(
+        "--input",
+        default=str(REPO_ROOT / "data/raw/new_customers.csv"),
+        help="Path to input CSV of new customers (default: data/raw/new_customers.csv).",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(REPO_ROOT / "results/new_customer_predictions.csv"),
+        help="Path to output CSV (default: results/new_customer_predictions.csv).",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Optional path to a model .pkl (default: auto-pick from models/).",
+    )
+    args = parser.parse_args()
+
+    in_path = Path(args.input)
+    if not in_path.is_absolute():
+        in_path = (REPO_ROOT / in_path).resolve()
+    if not in_path.exists():
+        raise FileNotFoundError(
+            f"Input CSV not found: {in_path}. "
+            "Provide --input, e.g. `--input data/processed/churn_processed.csv` for a quick sanity check."
+        )
+
+    out_path = Path(args.output)
+    if not out_path.is_absolute():
+        out_path = (REPO_ROOT / out_path).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model_path = _pick_model_path(args.model)
+    model = joblib.load(str(model_path))
+
+    new_data = pd.read_csv(in_path)
     X_new = preprocess_new_customer(new_data)
-
-    # Predict
     churn_pred = model.predict(X_new)
-    churn_prob = model.predict_proba(X_new)[:,1] if hasattr(model,"predict_proba") else churn_pred
+    churn_prob = (
+        model.predict_proba(X_new)[:, 1] if hasattr(model, "predict_proba") else churn_pred
+    )
 
-    # Save predictions
-    new_data['Churn_Prediction'] = churn_pred
-    new_data['Churn_Probability'] = churn_prob
-    new_data.to_csv(OUTPUT_PATH, index=False)
-    
-    print(f"✅ Predictions saved to {OUTPUT_PATH}")
+    out_df = new_data.copy()
+    out_df["Churn_Prediction"] = churn_pred
+    out_df["Churn_Probability"] = churn_prob
+    out_df.to_csv(out_path, index=False)
+    print(f"Predictions saved to {out_path} (model: {model_path.name})")
+
+
+if __name__ == "__main__":
+    main()
