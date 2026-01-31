@@ -1,18 +1,18 @@
 # Core data science libraries
-numpy
-pandas
-scikit-learn
+numpy==2.4.1
+pandas==3.0.0
+scikit-learn==1.8.0
 
 # Visualization libraries
-matplotlib
-seaborn
-altair==6.0.0  # <-- needed for Streamlit internals
+matplotlib==3.10.8
+seaborn==0.13.2
+altair==6.0.0       # Required by Streamlit internally
 
 # Machine learning utilities
-joblib
+joblib==1.5.3
 
 # Excel file handling
-openpyxl
+openpyxl==3.1.5
 
 # For app deployment
 streamlit==1.19.0
