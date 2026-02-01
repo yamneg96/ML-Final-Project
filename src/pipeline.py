@@ -29,6 +29,26 @@ if __name__ == "__main__":
     results = pd.DataFrame([lr_metrics, rf_metrics], index=["Logistic Regression","Random Forest"])
     print(results)
 
+    # Select best model based on ROC-AUC (or accuracy as tiebreaker)
+    if rf_metrics['roc_auc'] > lr_metrics['roc_auc']:
+        best_model = rf_model
+        best_name = "Random Forest"
+    elif lr_metrics['roc_auc'] > rf_metrics['roc_auc']:
+        best_model = lr_model
+        best_name = "Logistic Regression"
+    else:
+        # Tiebreaker: use accuracy
+        if rf_metrics['accuracy'] > lr_metrics['accuracy']:
+            best_model = rf_model
+            best_name = "Random Forest"
+        else:
+            best_model = lr_model
+            best_name = "Logistic Regression"
+    
+    # Save best model
+    save_model(best_model, "best_model.pkl")
+    print(f"\nBest model: {best_name} (saved as best_model.pkl)")
+
     # Save results
     repo_root = Path(__file__).resolve().parents[1]
     results_dir = repo_root / "results"

@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
+from pathlib import Path
 
 # ---------------- Page Config ----------------
 st.set_page_config(
@@ -11,16 +12,27 @@ st.set_page_config(
     layout="wide"
 )
 
+# ---------------- Paths ----------------
+BASE_DIR = Path(__file__).resolve().parent.parent
+SCALER_PATH = BASE_DIR / "models" / "scaler.pkl"
+FEATURE_COLUMNS_PATH = BASE_DIR / "models" / "feature_columns.pkl"
+NUMERIC_MEDIANS_PATH = BASE_DIR / "models" / "numeric_medians.pkl"
+MODEL_PATH = BASE_DIR / "models" / "best_model.pkl"
+
 # ---------------- Load Model Assets ----------------
 @st.cache_resource
 def load_assets():
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    scaler = joblib.load(os.path.join(BASE_DIR, "models", "scaler.pkl"))
-    encoder = joblib.load(os.path.join(BASE_DIR, "models", "encoder.pkl"))
-    model  = joblib.load(os.path.join(BASE_DIR, "models", "best_model.pkl"))
-    return scaler, encoder, model
+    scaler = joblib.load(str(SCALER_PATH))
+    feature_columns = joblib.load(str(FEATURE_COLUMNS_PATH))
+    numeric_medians = joblib.load(str(NUMERIC_MEDIANS_PATH)) if NUMERIC_MEDIANS_PATH.exists() else {}
+    model = joblib.load(str(MODEL_PATH))
+    return scaler, feature_columns, numeric_medians, model
 
-scaler, encoder, model = load_assets()
+try:
+    scaler, feature_columns, numeric_medians, model = load_assets()
+except Exception as e:
+    st.error(f"Error loading model assets: {e}")
+    st.stop()
 
 # ---------------- App Header ----------------
 st.title("📡 Customer Retention Dashboard")
@@ -35,6 +47,7 @@ with st.container():
         senior_citizen = col2.selectbox("Senior Citizen", ["No", "Yes"])
         partner = col1.selectbox("Partner", ["No", "Yes"])
         dependents = col2.selectbox("Dependents", ["No", "Yes"])
+        state = col1.selectbox("State", ["California", "Texas", "Florida", "New York", "Illinois", "Other"])
 
     with tab2:
         col1, col2, col3 = st.columns(3)
@@ -61,75 +74,113 @@ with st.container():
 
 # ---------------- Prediction Logic ----------------
 st.markdown("---")
-if st.button("🚀 Run Risk Analysis", use_container_width=True):
+if st.button(" Run Risk Analysis", use_container_width=True):
     
     try:
-        # 1. Create Input DataFrame
+        # 1. Create Input DataFrame with correct column names
         input_df = pd.DataFrame([{
-            'gender': gender,
-            'SeniorCitizen': 1 if senior_citizen == "Yes" else 0,
+            'Gender': gender,
+            'Senior Citizen': 1 if senior_citizen == "Yes" else 0,
             'Partner': partner,
             'Dependents': dependents,
-            'tenure': tenure,
-            'PhoneService': phone,
-            'MultipleLines': multiple_lines,
-            'InternetService': internet,
-            'OnlineSecurity': online_sec,
-            'OnlineBackup': online_bak,
-            'DeviceProtection': protection,
-            'TechSupport': tech_support,
-            'StreamingTV': streaming_tv,
-            'StreamingMovies': streaming_mov,
+            'Tenure Months': tenure,
+            'Phone Service': phone,
+            'Multiple Lines': multiple_lines,
+            'Internet Service': internet,
+            'Online Security': online_sec,
+            'Online Backup': online_bak,
+            'Device Protection': protection,
+            'Tech Support': tech_support,
+            'Streaming TV': streaming_tv,
+            'Streaming Movies': streaming_mov,
             'Contract': contract,
-            'PaperlessBilling': paperless,
-            'PaymentMethod': payment,
-            'MonthlyCharges': monthly_charges,
-            'TotalCharges': total_charges
+            'Paperless Billing': paperless,
+            'Payment Method': payment,
+            'Monthly Charges': monthly_charges,
+            'Total Charges': total_charges,
+            'State': state
         }])
 
-        # 2. Categorical Features for the Encoder (11 columns)
-        # This will expand into 20 columns
-        cat_cols = [
-            'gender', 'Partner', 'Dependents', 'PhoneService', 'MultipleLines', 
-            'InternetService', 'OnlineSecurity', 'OnlineBackup', 'DeviceProtection', 
-            'TechSupport', 'Contract'
+        # 2. Binary mapping (matches data_preprocessing.py)
+        binary_cols = ['Partner', 'Dependents', 'Senior Citizen', 'Phone Service', 'Multiple Lines', 'Paperless Billing']
+        binary_map = {
+            'Yes': 1, 'No': 0, 'No phone service': 0, 'No internet service': 0,
+            True: 1, False: 0, 1: 1, 0: 0, 'Male': 1, 'Female': 0
+        }
+        for col in binary_cols:
+            if col in input_df.columns:
+                input_df[col] = pd.to_numeric(input_df[col].map(binary_map), errors='coerce').fillna(0)
+
+        # 3. One-hot encode categorical columns (matches data_preprocessing.py)
+        categorical_cols = [
+            'Gender', 'Internet Service', 'Online Security', 'Online Backup',
+            'Device Protection', 'Tech Support', 'Streaming TV', 'Streaming Movies',
+            'Contract', 'Payment Method', 'State'
         ]
-        
-        # 3. Numerical Features (3 columns)
-        num_cols = ['tenure', 'MonthlyCharges', 'TotalCharges']
+        existing_cats = [col for col in categorical_cols if col in input_df.columns]
+        input_df = pd.get_dummies(input_df, columns=existing_cats, drop_first=True)
 
-        # --- TRANSFORMATION STEPS ---
-        
-        # A. Encode the 11 categories -> Results in 20 features
-        X_cat_encoded = encoder.transform(input_df[cat_cols])
-        
-        # B. Get the 3 Numerical features
-        X_num = input_df[num_cols].values
-        
-        # C. Scale the 9 features (Your Scaler expects exactly 9)
-        # We assume the scaler was trained on [Num(3) + first 6 encoded features]
-        # or just specific columns. Let's provide it the 9 it needs.
-        # Based on previous error, we'll take Num(3) and the first 6 of the encoded set.
-        X_for_scaler = np.hstack([X_num, X_cat_encoded[:, :6]]) 
-        X_scaled_part = scaler.transform(X_for_scaler)
-        
-        # D. Combine for the Model (The Model expects 23)
-        # 3 (Scaled Num) + 20 (Encoded Cat) = 23
-        X_final = np.hstack([X_scaled_part[:, :3], X_cat_encoded])
+        # 4. Convert numeric columns and handle NaNs
+        numeric_cols = ['Tenure Months', 'Monthly Charges', 'Total Charges']
+        for col in numeric_cols:
+            if col in input_df.columns:
+                input_df[col] = pd.to_numeric(input_df[col], errors='coerce')
+                if col in numeric_medians:
+                    input_df[col] = input_df[col].fillna(numeric_medians[col])
 
-        # 4. Predict
-        prob = model.predict_proba(X_final)[:, 1][0]
+        # 5. Select only numeric columns
+        X = input_df.select_dtypes(include=[np.number])
+        X = X.fillna(0)
+
+        # 6. Align columns to training feature set (CRITICAL!)
+        # Add missing columns as 0, then reorder to match feature_columns exactly
+        for col in feature_columns:
+            if col not in X.columns:
+                X[col] = 0
+        
+        # Reorder to match training feature order exactly
+        X = X.reindex(columns=feature_columns, fill_value=0)
+        
+        # Verify we have the right number of columns
+        if X.shape[1] != len(feature_columns):
+            st.error(f"Column alignment failed: Got {X.shape[1]} columns, expected {len(feature_columns)}")
+            st.stop()
+
+        # 7. Scale features - check for mismatches
+        if scaler.n_features_in_ != X.shape[1]:
+            st.error(f"❌ Scaler mismatch: Scaler was trained on {scaler.n_features_in_} features, but we have {X.shape[1]} features")
+            st.error("**Solution:** The scaler and feature_columns are out of sync. Regenerate preprocessing:")
+            st.code("python src/data_preprocessing.py")
+            st.stop()
+        
+        X_scaled = scaler.transform(X)
+        
+        # Verify shape matches model expectations  
+        if X_scaled.shape[1] != model.n_features_in_:
+            st.error(f"❌ Model mismatch: Scaler output {X_scaled.shape[1]} features, but model expects {model.n_features_in_} features")
+            st.error("**Root cause:** The scaler and model were trained with incompatible preprocessing.")
+            st.error("**Solution:** Regenerate all files in this order:")
+            st.code("python src/data_preprocessing.py\npython src/pipeline.py")
+            st.write("This will ensure the scaler, feature_columns, and model all use the same preprocessing.")
+            st.stop()
+
+        # 8. Predict
+        prob = model.predict_proba(X_scaled)[0, 1]
 
         # ---------------- Results UI ----------------
-        st.subheader("📊 Analysis Results")
+        st.subheader(" Analysis Results")
         c1, c2 = st.columns(2)
-        c1.metric("Churn Risk", "HIGH" if prob > 0.5 else "LOW")
+        risk_level = "HIGH" if prob > 0.5 else "LOW"
+        risk_color = "🔴" if prob > 0.5 else "🟢"
+        c1.metric("Churn Risk", f"{risk_color} {risk_level}")
         c2.metric("Probability", f"{prob*100:.1f}%")
-        st.progress(int(prob * 100))
+        st.progress(float(prob))
 
     except Exception as e:
-        st.error(f"Transformation Error: {e}")
-        st.info("The Scaler and Model have different requirements (9 vs 23 features). We are aligning them now.")
+        st.error(f"Prediction Error: {e}")
+        import traceback
+        with st.expander("Error Details"):
+            st.code(traceback.format_exc())
 
 st.markdown("---")
 st.caption("Internal Telecom Tool • Model v1.0.8")
