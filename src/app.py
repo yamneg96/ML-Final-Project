@@ -8,9 +8,48 @@ from pathlib import Path
 # ---------------- Page Config ----------------
 st.set_page_config(
     page_title="Telecom Churn Intelligence",
-    page_icon="📡",
+    page_icon="📈",
     layout="wide"
 )
+
+# ---------------- Custom CSS for Professional Icons ----------------
+st.markdown("""
+<style>
+    .icon-header {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .risk-badge {
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 16px;
+        font-weight: 600;
+        font-size: 14px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        letter-spacing: 0.5px;
+    }
+    .risk-high {
+        background-color: #dc3545;
+        color: white;
+    }
+    .risk-medium {
+        background-color: #ffc107;
+        color: #212529;
+    }
+    .risk-low {
+        background-color: #28a745;
+        color: white;
+    }
+    .icon {
+        font-size: 18px;
+        margin-right: 6px;
+    }
+    .metric-container {
+        padding: 10px 0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- Paths ----------------
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -35,11 +74,16 @@ except Exception as e:
     st.stop()
 
 # ---------------- App Header ----------------
-st.title("📡 Customer Retention Dashboard")
+st.markdown("""
+<div class="icon-header">
+    <span style="font-size: 28px; color: #1f77b4;">📈</span>
+    <h1 style="display: inline; margin: 0;">Customer Retention Dashboard</h1>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------- Input Form ----------------
 with st.container():
-    tab1, tab2, tab3 = st.tabs(["👤 Profile", "🛠 Services", "💰 Contract & Billing"])
+    tab1, tab2, tab3 = st.tabs(["Customer Profile", "Services & Features", "Contract & Billing"])
     
     with tab1:
         col1, col2 = st.columns(2)
@@ -74,7 +118,7 @@ with st.container():
 
 # ---------------- Prediction Logic ----------------
 st.markdown("---")
-if st.button(" Run Risk Analysis", use_container_width=True):
+if st.button("▶ Run Risk Analysis", use_container_width=True, type="primary"):
     
     try:
         # 1. Create Input DataFrame with correct column names
@@ -148,7 +192,7 @@ if st.button(" Run Risk Analysis", use_container_width=True):
 
         # 7. Scale features - check for mismatches
         if scaler.n_features_in_ != X.shape[1]:
-            st.error(f"❌ Scaler mismatch: Scaler was trained on {scaler.n_features_in_} features, but we have {X.shape[1]} features")
+            st.error(f"⚠ Scaler mismatch: Scaler was trained on {scaler.n_features_in_} features, but we have {X.shape[1]} features")
             st.error("**Solution:** The scaler and feature_columns are out of sync. Regenerate preprocessing:")
             st.code("python src/data_preprocessing.py")
             st.stop()
@@ -157,7 +201,7 @@ if st.button(" Run Risk Analysis", use_container_width=True):
         
         # Verify shape matches model expectations  
         if X_scaled.shape[1] != model.n_features_in_:
-            st.error(f"❌ Model mismatch: Scaler output {X_scaled.shape[1]} features, but model expects {model.n_features_in_} features")
+            st.error(f"⚠ Model mismatch: Scaler output {X_scaled.shape[1]} features, but model expects {model.n_features_in_} features")
             st.error("**Root cause:** The scaler and model were trained with incompatible preprocessing.")
             st.error("**Solution:** Regenerate all files in this order:")
             st.code("python src/data_preprocessing.py\npython src/pipeline.py")
@@ -168,12 +212,37 @@ if st.button(" Run Risk Analysis", use_container_width=True):
         prob = model.predict_proba(X_scaled)[0, 1]
 
         # ---------------- Results UI ----------------
-        st.subheader(" Analysis Results")
+        st.subheader("Analysis Results")
         c1, c2 = st.columns(2)
-        risk_level = "HIGH" if prob > 0.5 else "LOW"
-        risk_color = "🔴" if prob > 0.5 else "🟢"
-        c1.metric("Churn Risk", f"{risk_color} {risk_level}")
+        
+        # Determine risk level with 3 categories
+        if prob > 0.7:
+            risk_level = "HIGH"
+            risk_class = "risk-high"
+            risk_icon = "▲"
+        elif prob > 0.3:
+            risk_level = "MEDIUM"
+            risk_class = "risk-medium"
+            risk_icon = "●"
+        else:
+            risk_level = "LOW"
+            risk_class = "risk-low"
+            risk_icon = "▼"
+        
+        # Display risk with professional badge
+        risk_html = f'<div style="margin-top: 10px;"><span class="risk-badge {risk_class}">{risk_icon} {risk_level}</span></div>'
+        c1.markdown(f"**Churn Risk**{risk_html}", unsafe_allow_html=True)
         c2.metric("Probability", f"{prob*100:.1f}%")
+        
+        # Progress bar with color coding
+        if prob > 0.7:
+            progress_color = "red"
+        elif prob > 0.3:
+            progress_color = "orange"
+        else:
+            progress_color = "green"
+        
+        st.markdown(f'<div style="margin-top: 20px;"></div>', unsafe_allow_html=True)
         st.progress(float(prob))
 
     except Exception as e:
