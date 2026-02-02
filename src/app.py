@@ -4,6 +4,13 @@ import numpy as np
 import joblib
 import os
 from pathlib import Path
+import matplotlib.pyplot as plt
+
+# Fix NumPy compatibility for SHAP (numpy.trapz was removed in NumPy 2.0+)
+if not hasattr(np, 'trapz'):
+    np.trapz = np.trapezoid
+
+import shap
 
 # ---------------- Page Config ----------------
 st.set_page_config(
@@ -244,6 +251,89 @@ if st.button("▶ Run Risk Analysis", use_container_width=True, type="primary"):
         
         st.markdown(f'<div style="margin-top: 20px;"></div>', unsafe_allow_html=True)
         st.progress(float(prob))
+        
+        # ---------------- SHAP Explainability ----------------
+        st.markdown("---")
+        st.subheader("Feature Contribution Analysis")
+        st.markdown("**Understanding which features influenced this prediction:**")
+        
+        try:
+            # Create SHAP explainer based on model type
+            if hasattr(model, 'estimators_') or 'RandomForest' in str(type(model)):
+                # Random Forest or tree-based model - use TreeExplainer (fast)
+                explainer = shap.TreeExplainer(model)
+                shap_values = explainer.shap_values(X_scaled[0:1])
+                # TreeExplainer returns list for binary classification
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1]  # Use positive class (churn) SHAP values
+                shap_values = shap_values[0]  # Get first (and only) prediction
+            else:
+                # Logistic Regression - use model coefficients as SHAP values (exact for linear models)
+                # For linear models, SHAP values = feature_value * coefficient
+                if hasattr(model, 'coef_'):
+                    # Use coefficients directly (scaled by feature values)
+                    coefficients = model.coef_[0]  # Get coefficients for positive class
+                    feature_values = X_scaled[0]  # Current feature values
+                    shap_values = feature_values * coefficients
+                else:
+                    # Fallback: use Explainer with simple background
+                    background = np.zeros((1, X_scaled.shape[1]))
+                    explainer = shap.Explainer(model.predict_proba, background)
+                    shap_explanation = explainer(X_scaled[0:1])
+                    if hasattr(shap_explanation, 'values'):
+                        shap_values = shap_explanation.values[0][:, 1]
+                    else:
+                        shap_values = shap_explanation[0][:, 1] if len(shap_explanation.shape) > 1 else shap_explanation[0]
+            
+            # Create feature names for display
+            feature_names = feature_columns
+            
+            # Create DataFrame for better display
+            shap_df = pd.DataFrame({
+                'Feature': feature_names,
+                'SHAP Value': shap_values,
+                'Impact': ['Increases Churn' if v > 0 else 'Decreases Churn' for v in shap_values]
+            })
+            shap_df['Abs_SHAP'] = np.abs(shap_df['SHAP Value'])
+            shap_df = shap_df.sort_values('Abs_SHAP', ascending=False).head(10)  # Top 10 features
+            
+            # Display SHAP values as bar chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            colors = ['#dc3545' if x > 0 else '#28a745' for x in shap_df['SHAP Value']]
+            ax.barh(shap_df['Feature'], shap_df['SHAP Value'], color=colors)
+            ax.axvline(x=0, color='black', linestyle='-', linewidth=0.5)
+            ax.set_xlabel('SHAP Value (Impact on Churn Probability)', fontsize=11)
+            ax.set_title('Top 10 Features Contributing to Prediction', fontsize=12, fontweight='bold')
+            ax.grid(axis='x', alpha=0.3, linestyle='--')
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+            
+            # Display feature impact summary
+            st.markdown("**Feature Impact Summary:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Increases Churn Risk:**")
+                increasing = shap_df[shap_df['SHAP Value'] > 0].head(5)
+                if len(increasing) > 0:
+                    for _, row in increasing.iterrows():
+                        st.write(f"• {row['Feature']}: +{row['SHAP Value']:.3f}")
+                else:
+                    st.write("None")
+            
+            with col2:
+                st.markdown("**Decreases Churn Risk:**")
+                decreasing = shap_df[shap_df['SHAP Value'] < 0].head(5)
+                if len(decreasing) > 0:
+                    for _, row in decreasing.iterrows():
+                        st.write(f"• {row['Feature']}: {row['SHAP Value']:.3f}")
+                else:
+                    st.write("None")
+            
+        except Exception as shap_error:
+            st.warning(f"SHAP analysis unavailable: {str(shap_error)}")
+            st.info("Feature importance can still be viewed through model coefficients.")
 
     except Exception as e:
         st.error(f"Prediction Error: {e}")

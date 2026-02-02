@@ -16,3 +16,6 @@ openpyxl>=3.1.2
 
 # For app deployment
 streamlit>=1.38.0
+
+# Model explainability
+shap>=0.44.0
