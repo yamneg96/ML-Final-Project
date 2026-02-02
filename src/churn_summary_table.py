@@ -26,4 +26,8 @@ summary = df.groupby("Churn_Prediction").agg(
 summary_path = os.path.join(TABLES_DIR, "churn_summary_table.csv")
 summary.to_csv(summary_path, index=False)
 
-print(f"✅ Churn summary table saved to {summary_path}")
+print(f"[OK] Churn summary table saved to {summary_path}")
+print(f"   Total customers: {len(df)}")
+print(f"   Summary:")
+for _, row in summary.iterrows():
+    print(f"     Churn {int(row['Churn_Prediction'])}: {int(row['Count'])} customers (mean prob: {row['Mean_Probability']:.3f})")
